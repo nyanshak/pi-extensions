@@ -1,0 +1,10 @@
+{
+  "name": "pi-acp",
+  "version": "0.1.0",
+  "description": "ACP (Agent Client Protocol) support for pi",
+  "type": "module",
+  "pi": {
+    "extensions": ["./src/index.ts"]
+  },
+  "dependencies": {}
+}
