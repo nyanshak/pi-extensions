@@ -244,6 +244,7 @@ class AcpProtocolHandler {
 	private abortController: AbortController | null = null;
 	private pendingPrompt: PendingPrompt | null = null;
 	private messageBuffer: string = "";
+	
 
 	constructor(pi: ExtensionAPI, transport: StdioTransport) {
 		this.transport = transport;
@@ -254,8 +255,8 @@ class AcpProtocolHandler {
 	}
 
 	private setupEventListeners(): void {
-		// Track last message version to detect duplicates
-		let lastMessageVersion = 0;
+		// Track last sent text hash to detect duplicates
+		let lastSentTextHash = "";
 		
 		// Listen for message updates (streaming text)
 		this.pi.on("message_update", (event: MessageUpdateEvent) => {
@@ -265,19 +266,17 @@ class AcpProtocolHandler {
 			if (!this.pendingPrompt || msg?.role !== "assistant") return;
 
 			const text = this.getTextFromMessage(msg);
-			
-			// Debug: log what we got
-			if (false) console.error("[pi-acp] message_update: text length=", text?.length || 0, 
-				"content length=", msg?.content?.length || 0);
-			
 			if (!text) return;
 			
-			// Skip duplicate messages (same content sent multiple times)
-			const version = msg._version || 0;
-			if (version > 0 && version <= lastMessageVersion) {
+			// Create a simple hash of the text to detect duplicates
+			// Use first 50 chars + length as a quick identifier
+			const textHash = text.substring(0, 50) + ":" + text.length;
+			
+			// Skip if we've already sent this exact text
+			if (textHash === lastSentTextHash) {
 				return;
 			}
-			lastMessageVersion = version;
+			lastSentTextHash = textHash;
 			
 			// Only append NEW text (not already in buffer)
 			if (!this.messageBuffer.includes(text)) {
@@ -295,24 +294,20 @@ class AcpProtocolHandler {
 			// Only process assistant message ends
 			if (!this.pendingPrompt || msg?.role !== "assistant") return;
 
-			// Capture final text
+			// Capture final text if not already in buffer
 			const finalText = this.getTextFromMessage(msg);
-			
-			// If we have text, buffer it and send
-			if (finalText) {
-				if (!this.messageBuffer.includes(finalText)) {
-					this.messageBuffer += finalText;
-				}
-				this.sendSessionUpdate(this.pendingPrompt.sessionId, {
-					sessionUpdate: "agent_message_chunk",
-					content: { type: "text", text: finalText },
-				});
+			if (finalText && !this.messageBuffer.includes(finalText)) {
+				this.messageBuffer += finalText;
+			}
+
+			// If we have content, send end and resolve
+			// message_update already sent the final chunk
+			if (this.messageBuffer) {
 				this.sendSessionUpdate(this.pendingPrompt.sessionId, {
 					sessionUpdate: "agent_message_end",
 				});
 				this.pendingPrompt.messageEndResolve();
 			}
-			// If no text, don't resolve yet - wait for more events
 		});
 
 		// Listen for tool calls
