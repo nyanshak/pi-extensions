@@ -267,6 +267,19 @@ class AcpProtocolHandler {
 			}
 		});
 
+		// Listen for message end
+		this.pi.on("message_end", (event: MessageEndEvent) => {
+			if (!this.pendingPrompt) return;
+
+			// Send agent message end
+			this.sendSessionUpdate(this.pendingPrompt.sessionId, {
+				sessionUpdate: "agent_message_end",
+			});
+
+			// Resolve the pending prompt
+			this.pendingPrompt.messageEndResolve();
+		});
+
 		// Listen for tool calls
 		this.pi.on("tool_call", (event: ToolCallEvent) => {
 			if (!this.pendingPrompt) return;
@@ -368,27 +381,36 @@ class AcpProtocolHandler {
 	private getTextFromMessage(message: any): string {
 		if (!message) return "";
 		
-		// Try to extract text from various message structures
-		if (typeof message === "string") return message;
+		// Message might be an array with one element
+		if (Array.isArray(message)) {
+			message = message[0];
+		}
+
+		const msg = message as any;
 		
-		// Look for content array
-		if (message.content && Array.isArray(message.content)) {
-			return message.content
-				.filter((c: any) => c.type === "text" || c.text)
-				.map((c: any) => c.text || "")
-				.join("");
+		// Try direct content array (the actual structure: {role, content: [...]})
+		if (msg?.content && Array.isArray(msg.content)) {
+			const parts: string[] = [];
+			for (const block of msg.content) {
+				// Only include text blocks, skip thinking
+				if (block.type === "text" && block.text) {
+					parts.push(block.text);
+				}
+			}
+			return parts.join("");
 		}
 		
-		// Look for text field
-		if (message.text) return message.text;
-		
-		// Look for parts array (common in some message formats)
-		if (message.parts && Array.isArray(message.parts)) {
-			return message.parts
-				.filter((p: any) => p.text)
-				.map((p: any) => p.text)
-				.join("");
+		// Try message.message.content (nested structure)
+		if (msg?.message?.content) {
+			const content = msg.message.content;
+			if (Array.isArray(content)) {
+				return content.map((c: any) => c.text || "").filter(Boolean).join("");
+			}
+			if (content.text) return content.text;
 		}
+		
+		// Try direct text field
+		if (msg?.text) return msg.text;
 
 		return "";
 	}
