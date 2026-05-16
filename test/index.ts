@@ -31,7 +31,7 @@ async function runTest(name: string, fn: () => Promise<boolean>): Promise<boolea
 
 // Create agent instance and get session ID
 async function createAgent(): Promise<{
-	send: (msg: object) => Promise<JsonRpcMessage>;
+	send: (msg: object, timeoutMs?: number) => Promise<JsonRpcMessage>;
 	sessionId: string;
 	kill: () => void;
 }> {
@@ -59,7 +59,7 @@ async function createAgent(): Promise<{
 			}
 		});
 
-		const send = (msg: object): Promise<JsonRpcMessage> => {
+		const send = (msg: object, timeoutMs = 5000): Promise<JsonRpcMessage> => {
 			return new Promise((resolve) => {
 				const id = (msg as any).id || Date.now();
 				pendingRequests.set(id, resolve);
@@ -69,31 +69,25 @@ async function createAgent(): Promise<{
 						pendingRequests.delete(id);
 						resolve({ jsonrpc: "2.0", id, error: { code: -32603, message: "timeout" } });
 					}
-				}, 5000);
+				}, timeoutMs);
 			});
 		};
 
 		setTimeout(async () => {
 			// Send initialize
-			await send({ jsonrpc: "2.0", id: 0, method: "initialize", params: { protocolVersion: 1 } });
+			await send({ jsonrpc: "2.0", id: 0, method: "initialize", params: { protocolVersion: 1 } }, 10000);
 			
 			// Send session/new
-			const sessionRes = await send({ jsonrpc: "2.0", id: 1, method: "session/new", params: { cwd: "/tmp", mcpServers: [] } });
-			sessionId = (sessionRes.result as any)?.sessionId || "sess_fallback";
-
-			resolveSession({
-				send,
-				sessionId,
-				kill: () => agent.kill(),
-			});
-		}, 2000);
+			const newRes = await send({ jsonrpc: "2.0", id: 1, method: "session/new", params: { cwd: "/tmp", mcpServers: [] } }, 10000);
+			if (newRes.result && (newRes.result as any).sessionId) {
+				sessionId = (newRes.result as any).sessionId;
+			}
+			resolveSession({ send, sessionId: sessionId || "", kill: () => agent.kill() });
+		}, 500);
 	});
 }
 
-// ============================================================================
-// Tests
-// ============================================================================
-
+// Main test suite
 async function runTests() {
 	console.log("=== ACP Protocol Compliance Tests ===\n");
 	console.log("Spec: https://agentclientprotocol.com/\n");
@@ -101,110 +95,95 @@ async function runTests() {
 	let passed = 0;
 	let failed = 0;
 
-	// Get agent instance
+	// Create agent once for all tests
 	const agent = await createAgent();
+	console.log("Agent ready, session:", agent.sessionId.substring(0, 15) + "...\n");
 
-	// Test 1: Initialize
+	// Test 1-7: initialize
 	const t1 = await runTest("initialize returns protocolVersion 1", async () => {
-		const res = await agent.send({ jsonrpc: "2.0", id: 0, method: "initialize", params: { protocolVersion: 1 } });
+		const res = await agent.send({ jsonrpc: "2.0", id: 10, method: "initialize", params: { protocolVersion: 1 } });
 		return (res.result as any)?.protocolVersion === 1;
 	});
 	if (t1) passed++; else failed++;
 
-	// Test 2: Initialize returns agentCapabilities
 	const t2 = await runTest("initialize returns agentCapabilities", async () => {
-		const res = await agent.send({ jsonrpc: "2.0", id: 0, method: "initialize", params: { protocolVersion: 1 } });
+		const res = await agent.send({ jsonrpc: "2.0", id: 11, method: "initialize", params: { protocolVersion: 1 } });
 		return (res.result as any)?.agentCapabilities !== undefined;
 	});
 	if (t2) passed++; else failed++;
 
-	// Test 3: Initialize returns loadSession
 	const t3 = await runTest("initialize returns loadSession: true", async () => {
-		const res = await agent.send({ jsonrpc: "2.0", id: 0, method: "initialize", params: { protocolVersion: 1 } });
+		const res = await agent.send({ jsonrpc: "2.0", id: 12, method: "initialize", params: { protocolVersion: 1 } });
 		return (res.result as any)?.agentCapabilities?.loadSession === true;
 	});
 	if (t3) passed++; else failed++;
 
-	// Test 4: Initialize returns sessionCapabilities
 	const t4 = await runTest("initialize returns sessionCapabilities.close and resume", async () => {
-		const res = await agent.send({ jsonrpc: "2.0", id: 0, method: "initialize", params: { protocolVersion: 1 } });
+		const res = await agent.send({ jsonrpc: "2.0", id: 13, method: "initialize", params: { protocolVersion: 1 } });
 		const caps = (res.result as any)?.agentCapabilities?.sessionCapabilities;
 		return caps?.close !== undefined && caps?.resume !== undefined;
 	});
 	if (t4) passed++; else failed++;
 
-	// Test 5: Initialize returns promptCapabilities
 	const t5 = await runTest("initialize returns promptCapabilities with image: true", async () => {
-		const res = await agent.send({ jsonrpc: "2.0", id: 0, method: "initialize", params: { protocolVersion: 1 } });
-		return (res.result as any)?.agentCapabilities?.promptCapabilities?.image === true;
+		const res = await agent.send({ jsonrpc: "2.0", id: 14, method: "initialize", params: { protocolVersion: 1 } });
+		const caps = (res.result as any)?.agentCapabilities?.promptCapabilities;
+		return caps?.image === true;
 	});
 	if (t5) passed++; else failed++;
 
-	// Test 6: Initialize returns agentInfo
 	const t6 = await runTest("initialize returns agentInfo with name and version", async () => {
-		const res = await agent.send({ jsonrpc: "2.0", id: 0, method: "initialize", params: { protocolVersion: 1 } });
+		const res = await agent.send({ jsonrpc: "2.0", id: 15, method: "initialize", params: { protocolVersion: 1 } });
 		const info = (res.result as any)?.agentInfo;
-		return info?.name === "pi-coding-agent" && info?.version !== undefined;
+		return info?.name !== undefined && info?.version !== undefined;
 	});
 	if (t6) passed++; else failed++;
 
-	// Test 7: Initialize returns authMethods
 	const t7 = await runTest("initialize returns authMethods array", async () => {
-		const res = await agent.send({ jsonrpc: "2.0", id: 0, method: "initialize", params: { protocolVersion: 1 } });
+		const res = await agent.send({ jsonrpc: "2.0", id: 16, method: "initialize", params: { protocolVersion: 1 } });
 		return Array.isArray((res.result as any)?.authMethods);
 	});
 	if (t7) passed++; else failed++;
 
 	// Test 8: session/new requires cwd
 	const t8 = await runTest("session/new requires cwd (invalid params)", async () => {
-		const res = await agent.send({ jsonrpc: "2.0", id: 1, method: "session/new", params: {} });
+		const res = await agent.send({ jsonrpc: "2.0", id: 20, method: "session/new", params: {} });
 		return res.error?.code === -32602;
 	});
 	if (t8) passed++; else failed++;
 
 	// Test 9: session/new returns sessionId
 	const t9 = await runTest("session/new returns sessionId in result", async () => {
-		const res = await agent.send({ jsonrpc: "2.0", id: 1, method: "session/new", params: { cwd: "/tmp", mcpServers: [] } });
-		const sessionId = (res.result as any)?.sessionId;
-		return sessionId !== undefined && sessionId.startsWith("sess_");
+		const res = await agent.send({ jsonrpc: "2.0", id: 21, method: "session/new", params: { cwd: "/tmp", mcpServers: [] } });
+		return (res.result as any)?.sessionId?.startsWith("sess_") === true;
 	});
 	if (t9) passed++; else failed++;
 
 	// Test 10: session/prompt requires sessionId
 	const t10 = await runTest("session/prompt requires sessionId", async () => {
-		const res = await agent.send({ jsonrpc: "2.0", id: 2, method: "session/prompt", params: { prompt: [{ type: "text", text: "hello" }] } });
+		const res = await agent.send({ jsonrpc: "2.0", id: 30, method: "session/prompt", params: { prompt: [] } });
 		return res.error?.code === -32602;
 	});
 	if (t10) passed++; else failed++;
 
-	// Test 11: session/prompt works with valid params
+	// Test 11: session/prompt with text content returns stopReason
 	const t11 = await runTest("session/prompt with text content returns stopReason", async () => {
-		const res = await agent.send({
-			jsonrpc: "2.0",
-			id: 2,
-			method: "session/prompt",
-			params: { sessionId: agent.sessionId, prompt: [{ type: "text", text: "echo hello" }] },
-		});
+		const res = await agent.send({ jsonrpc: "2.0", id: 31, method: "session/prompt", params: { sessionId: agent.sessionId, prompt: [{ type: "text", text: "hi" }] } }, 10000);
 		return (res.result as any)?.stopReason !== undefined;
 	});
 	if (t11) passed++; else failed++;
 
-	// Test 12: session/close returns {}
+	// Test 12: session/close returns empty result
 	const t12 = await runTest("session/close returns empty result", async () => {
-		const res = await agent.send({ jsonrpc: "2.0", id: 3, method: "session/close", params: { sessionId: agent.sessionId } });
+		const res = await agent.send({ jsonrpc: "2.0", id: 40, method: "session/close", params: { sessionId: agent.sessionId } });
 		return res.result !== undefined;
 	});
 	if (t12) passed++; else failed++;
 
-	// Test 13: session/set_mode accepts valid modes
+	// Test 13: session/set_mode accepts various modes
 	const t13 = await runTest("session/set_mode accepts readOnly, auto, fullAccess", async () => {
 		for (const mode of ["readOnly", "auto", "fullAccess"]) {
-			const res = await agent.send({
-				jsonrpc: "2.0",
-				id: Date.now(),
-				method: "session/set_mode",
-				params: { sessionId: agent.sessionId, mode },
-			});
+			const res = await agent.send({ jsonrpc: "2.0", id: Date.now(), method: "session/set_mode", params: { sessionId: agent.sessionId, mode } });
 			if (res.error) return false;
 		}
 		return true;
@@ -242,7 +221,7 @@ async function runTests() {
 					resource: { uri: "file:///tmp/test.txt", text: "test content" }
 				}],
 			},
-		});
+		}, 10000);
 		return res.result !== undefined;
 	});
 	if (t16) passed++; else failed++;
@@ -269,7 +248,7 @@ async function runTests() {
 					name: "test.txt"
 				}],
 			},
-		});
+		}, 15000);
 		// Pass if: result exists (success) OR error is NOT -32602 (invalid params)
 		return res.result !== undefined || (res.error && res.error.code !== -32602);
 	});

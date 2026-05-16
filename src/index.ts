@@ -232,6 +232,7 @@ interface PendingPrompt {
 	reject: (error: Error) => void;
 	messageEndPromise: Promise<void>;
 	messageEndResolve: () => void;
+	pendingMessageEnd: boolean; // Track if we got message_end with empty content
 }
 
 class AcpProtocolHandler {
@@ -264,6 +265,11 @@ class AcpProtocolHandler {
 			if (!this.pendingPrompt || msg?.role !== "assistant") return;
 
 			const text = this.getTextFromMessage(msg);
+			
+			// Debug: log what we got
+			if (false) console.error("[pi-acp] message_update: text length=", text?.length || 0, 
+				"content length=", msg?.content?.length || 0);
+			
 			if (!text) return;
 			
 			// Skip duplicate messages (same content sent multiple times)
@@ -286,25 +292,27 @@ class AcpProtocolHandler {
 		// Listen for message end
 		this.pi.on("message_end", (event: MessageEndEvent) => {
 			const msg = event.message as any;
-			// Only resolve if this is an assistant message end
+			// Only process assistant message ends
 			if (!this.pendingPrompt || msg?.role !== "assistant") return;
 
-			if (false) console.error("[pi-acp] message_end: capturing final text");
-			
-			// Capture the final message content from message_end
+			// Capture final text
 			const finalText = this.getTextFromMessage(msg);
-			if (finalText && !this.messageBuffer) {
-				if (false) console.error("[pi-acp] message_end: captured final text:", finalText.substring(0, 100));
-				this.messageBuffer = finalText;
+			
+			// If we have text, buffer it and send
+			if (finalText) {
+				if (!this.messageBuffer.includes(finalText)) {
+					this.messageBuffer += finalText;
+				}
+				this.sendSessionUpdate(this.pendingPrompt.sessionId, {
+					sessionUpdate: "agent_message_chunk",
+					content: { type: "text", text: finalText },
+				});
+				this.sendSessionUpdate(this.pendingPrompt.sessionId, {
+					sessionUpdate: "agent_message_end",
+				});
+				this.pendingPrompt.messageEndResolve();
 			}
-
-			// Send agent message end
-			this.sendSessionUpdate(this.pendingPrompt.sessionId, {
-				sessionUpdate: "agent_message_end",
-			});
-
-			// Resolve the pending prompt
-			this.pendingPrompt.messageEndResolve();
+			// If no text, don't resolve yet - wait for more events
 		});
 
 		// Listen for tool calls
@@ -383,6 +391,14 @@ class AcpProtocolHandler {
 				content: content.length > 0 ? content : undefined,
 				error: event.isError ? "Tool execution failed" : undefined,
 			});
+
+			// If we got message_end before this tool result, resolve now
+			if (this.pendingPrompt.pendingMessageEnd) {
+				this.sendSessionUpdate(this.pendingPrompt.sessionId, {
+					sessionUpdate: "agent_message_end",
+				});
+				this.pendingPrompt.messageEndResolve();
+			}
 		});
 
 		// Listen for tool execution end
@@ -416,10 +432,12 @@ class AcpProtocolHandler {
 			const parts: string[] = [];
 			const sorted = [...msg.content].sort((a: any, b: any) => (a.index || 0) - (b.index || 0));
 			for (const block of sorted) {
-				// console.error("[pi-acp] getText: block type=", block.type, "has text?", !!block.text);
-				// Only include text blocks, skip thinking
+				// Extract text from text blocks (block.text) or thinking blocks (block.thinking)
 				if (block.type === "text" && block.text) {
 					parts.push(block.text);
+				} else if (block.type === "thinking" && block.thinking) {
+					// For thinking blocks, text is in block.thinking field
+					// Optionally include thinking, but let's skip it per ACP spec
 				}
 			}
 			// console.error("[pi-acp] getText: extracted parts:", parts.length);
@@ -710,6 +728,7 @@ class AcpProtocolHandler {
 			reject: () => {},
 			messageEndPromise,
 			messageEndResolve: messageEndResolve!,
+			pendingMessageEnd: false,
 		};
 
 		try {
