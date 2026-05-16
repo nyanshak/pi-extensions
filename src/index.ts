@@ -255,21 +255,43 @@ class AcpProtocolHandler {
 	private setupEventListeners(): void {
 		// Listen for message updates (streaming text)
 		this.pi.on("message_update", (event: MessageUpdateEvent) => {
-			if (!this.pendingPrompt) return;
+			const msg = event.message as any;
+			
+			// Debug: log message content structure
+			if (false) console.error("[pi-acp] message_update: pendingPrompt=", !!this.pendingPrompt, "role=", msg?.role);
+			
+			// Only process assistant messages
+			if (!this.pendingPrompt || msg?.role !== "assistant") return;
 
-			const text = this.getTextFromMessage(event.message);
+			if (false) console.error("[pi-acp] message_update: processing assistant message");
+			
+			const text = this.getTextFromMessage(msg);
 			if (text) {
+				console.error("[pi-acp] Extracted text:", text.substring(0, 100));
 				this.messageBuffer += text;
 				this.sendSessionUpdate(this.pendingPrompt.sessionId, {
 					sessionUpdate: "agent_message_chunk",
 					content: { type: "text", text },
 				});
+			} else {
+				console.error("[pi-acp] No text extracted from message");
 			}
 		});
 
 		// Listen for message end
 		this.pi.on("message_end", (event: MessageEndEvent) => {
-			if (!this.pendingPrompt) return;
+			const msg = event.message as any;
+			// Only resolve if this is an assistant message end
+			if (!this.pendingPrompt || msg?.role !== "assistant") return;
+
+			if (false) console.error("[pi-acp] message_end: capturing final text");
+			
+			// Capture the final message content from message_end
+			const finalText = this.getTextFromMessage(msg);
+			if (finalText && !this.messageBuffer) {
+				if (false) console.error("[pi-acp] message_end: captured final text:", finalText.substring(0, 100));
+				this.messageBuffer = finalText;
+			}
 
 			// Send agent message end
 			this.sendSessionUpdate(this.pendingPrompt.sessionId, {
@@ -366,7 +388,9 @@ class AcpProtocolHandler {
 
 		// Listen for message end (turn complete)
 		this.pi.on("message_end", (event: MessageEndEvent) => {
-			if (!this.pendingPrompt) return;
+			const msg = event.message as any;
+			// Only resolve if this is an assistant message end
+			if (!this.pendingPrompt || msg?.role !== "assistant") return;
 
 			// Send agent message end
 			this.sendSessionUpdate(this.pendingPrompt.sessionId, {
@@ -379,29 +403,40 @@ class AcpProtocolHandler {
 	}
 
 	private getTextFromMessage(message: any): string {
-		if (!message) return "";
+		if (!message) {
+			// console.error("[pi-acp] getText: message is null/undefined");
+			return "";
+		}
 		
 		// Message might be an array with one element
 		if (Array.isArray(message)) {
+			// console.error("[pi-acp] getText: message is array, first element:", JSON.stringify(message[0]).substring(0, 100));
 			message = message[0];
 		}
 
 		const msg = message as any;
+		// console.error("[pi-acp] getText: msg.role=", msg?.role, "has content?", !!msg?.content);
 		
 		// Try direct content array (the actual structure: {role, content: [...]})
 		if (msg?.content && Array.isArray(msg.content)) {
+			// console.error("[pi-acp] getText: content length=", msg.content.length);
+			// Sort by index and extract text blocks
 			const parts: string[] = [];
-			for (const block of msg.content) {
+			const sorted = [...msg.content].sort((a: any, b: any) => (a.index || 0) - (b.index || 0));
+			for (const block of sorted) {
+				// console.error("[pi-acp] getText: block type=", block.type, "has text?", !!block.text);
 				// Only include text blocks, skip thinking
 				if (block.type === "text" && block.text) {
 					parts.push(block.text);
 				}
 			}
+			// console.error("[pi-acp] getText: extracted parts:", parts.length);
 			return parts.join("");
 		}
 		
 		// Try message.message.content (nested structure)
 		if (msg?.message?.content) {
+			// console.error("[pi-acp] getText: has nested message.content");
 			const content = msg.message.content;
 			if (Array.isArray(content)) {
 				return content.map((c: any) => c.text || "").filter(Boolean).join("");
@@ -410,8 +445,12 @@ class AcpProtocolHandler {
 		}
 		
 		// Try direct text field
-		if (msg?.text) return msg.text;
+		if (msg?.text) {
+			// console.error("[pi-acp] getText: has direct text:", msg.text.substring(0, 50));
+			return msg.text;
+		}
 
+		// console.error("[pi-acp] getText: no text found. msg keys:", Object.keys(msg || {}));
 		return "";
 	}
 
@@ -683,7 +722,7 @@ class AcpProtocolHandler {
 
 		try {
 			// Send user message to pi
-			this.pi.sendUserMessage(userText, { deliverAs: "steer" });
+			await this.pi.sendUserMessage(userText, { deliverAs: "steer" });
 
 			// Wait for message end or cancellation
 			const stopReason = await Promise.race([
