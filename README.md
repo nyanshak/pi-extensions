@@ -52,16 +52,14 @@ pi --acp
 
 ### Zed Configuration
 
-Add pi as a custom agent in your Zed settings:
+Add pi as a custom agent in your Zed `settings.json`:
 
 ```json
-{
-  "agent_servers": {
-    "pi": {
-      "command": "pi",
-      "args": ["--acp"],
-      "env": {}
-    }
+"agent_servers": {
+  "pi": {
+    "command": "pi",
+    "args": ["--acp"],
+    "env": {}
   }
 }
 ```
