@@ -253,28 +253,33 @@ class AcpProtocolHandler {
 	}
 
 	private setupEventListeners(): void {
+		// Track last message version to detect duplicates
+		let lastMessageVersion = 0;
+		
 		// Listen for message updates (streaming text)
 		this.pi.on("message_update", (event: MessageUpdateEvent) => {
 			const msg = event.message as any;
 			
-			// Debug: log message content structure
-			if (false) console.error("[pi-acp] message_update: pendingPrompt=", !!this.pendingPrompt, "role=", msg?.role);
-			
 			// Only process assistant messages
 			if (!this.pendingPrompt || msg?.role !== "assistant") return;
 
-			if (false) console.error("[pi-acp] message_update: processing assistant message");
-			
 			const text = this.getTextFromMessage(msg);
-			if (text) {
-				console.error("[pi-acp] Extracted text:", text.substring(0, 100));
+			if (!text) return;
+			
+			// Skip duplicate messages (same content sent multiple times)
+			const version = msg._version || 0;
+			if (version > 0 && version <= lastMessageVersion) {
+				return;
+			}
+			lastMessageVersion = version;
+			
+			// Only append NEW text (not already in buffer)
+			if (!this.messageBuffer.includes(text)) {
 				this.messageBuffer += text;
 				this.sendSessionUpdate(this.pendingPrompt.sessionId, {
 					sessionUpdate: "agent_message_chunk",
 					content: { type: "text", text },
 				});
-			} else {
-				console.error("[pi-acp] No text extracted from message");
 			}
 		});
 
@@ -386,20 +391,7 @@ class AcpProtocolHandler {
 			// Tool execution complete - LLM will continue processing
 		});
 
-		// Listen for message end (turn complete)
-		this.pi.on("message_end", (event: MessageEndEvent) => {
-			const msg = event.message as any;
-			// Only resolve if this is an assistant message end
-			if (!this.pendingPrompt || msg?.role !== "assistant") return;
 
-			// Send agent message end
-			this.sendSessionUpdate(this.pendingPrompt.sessionId, {
-				sessionUpdate: "agent_message_end",
-			});
-
-			// Resolve the pending prompt
-			this.pendingPrompt.messageEndResolve();
-		});
 	}
 
 	private getTextFromMessage(message: any): string {
