@@ -1,0 +1,16 @@
+# Dependencies (in subdirs)
+pi-acp/node_modules/
+pi-web/node_modules/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Build
+dist/
+build/
