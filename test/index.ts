@@ -249,7 +249,8 @@ async function runTests() {
 	if (t18Result) passed++; else failed++;
 
 	// Test 19: no duplicate agent_message_chunk notifications
-	const t19 = await runTest("no duplicate agent_message_chunk notifications", async () => {
+	// Verifies chunks are incremental (each chunk adds new content)
+	const t19 = await runTest("agent_message_chunk notifications are incremental", async () => {
 		const testAgent = spawn("pi", ["--acp"], { stdio: ["pipe", "pipe", "pipe"] });
 		const chunks: string[] = [];
 		const pending = new Map<number | string, (msg: JsonRpcMessage) => void>();
@@ -260,7 +261,8 @@ async function runTests() {
 				try {
 					const msg = JSON.parse(line);
 					if (msg.method === "session/update" && msg.params?.update?.sessionUpdate === "agent_message_chunk") {
-						chunks.push(msg.params.update.content?.text || "");
+						const text = msg.params.update.content?.text || "";
+						chunks.push(text);
 					}
 					if (msg.id && pending.has(msg.id)) {
 						pending.get(msg.id)?.(msg);
@@ -291,9 +293,17 @@ async function runTests() {
 		await new Promise((r) => setTimeout(r, 2000));
 		testAgent.kill();
 
-		// All non-empty chunks should be unique
+		// All non-empty chunks should be incremental (each longer than the previous)
 		const nonEmpty = chunks.filter((t) => t.length > 0);
-		return nonEmpty.length === new Set(nonEmpty).size;
+		if (nonEmpty.length <= 1) return true; // Single chunk is fine
+		
+		// Check incremental growth
+		for (let i = 1; i < nonEmpty.length; i++) {
+			if (nonEmpty[i].length <= nonEmpty[i-1].length) {
+				return false; // Not incremental
+			}
+		}
+		return true;
 	});
 	if (t19) passed++; else failed++;
 

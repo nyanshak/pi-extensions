@@ -255,9 +255,6 @@ class AcpProtocolHandler {
 	}
 
 	private setupEventListeners(): void {
-		// Track last sent text hash to detect duplicates
-		let lastSentTextHash = "";
-		
 		// Listen for message updates (streaming text)
 		this.pi.on("message_update", (event: MessageUpdateEvent) => {
 			const msg = event.message as any;
@@ -268,25 +265,27 @@ class AcpProtocolHandler {
 			const text = this.getTextFromMessage(msg);
 			if (!text) return;
 			
-			// Create a simple hash of the text to detect duplicates
-			// Use first 50 chars + length as a quick identifier
-			const textHash = text.substring(0, 50) + ":" + text.length;
-			
-			// Skip if we've already sent this exact text
-			if (textHash === lastSentTextHash) {
-				return;
+			// If the new text starts with what we already have, it's an incremental update
+			// Only send the NEW portion (the diff)
+			if (this.messageBuffer.length > 0 && text.startsWith(this.messageBuffer)) {
+				const newPortion = text.substring(this.messageBuffer.length);
+				if (newPortion.length > 0) {
+					this.messageBuffer = text;
+					this.sendSessionUpdate(this.pendingPrompt.sessionId, {
+						sessionUpdate: "agent_message_chunk",
+						content: { type: "text", text: newPortion },
+					});
 			}
-			lastSentTextHash = textHash;
-			
-			// Only append NEW text (not already in buffer)
-			if (!this.messageBuffer.includes(text)) {
-				this.messageBuffer += text;
-				this.sendSessionUpdate(this.pendingPrompt.sessionId, {
-					sessionUpdate: "agent_message_chunk",
-					content: { type: "text", text },
-				});
-			}
-		});
+		} else if (!this.messageBuffer) {
+			// First message, just send and buffer
+			this.messageBuffer = text;
+			this.sendSessionUpdate(this.pendingPrompt.sessionId, {
+				sessionUpdate: "agent_message_chunk",
+				content: { type: "text", text },
+			});
+		}
+		// If text doesn't start with buffer, it's a complete new message - skip (shouldn't happen in normal flow)
+	});
 
 		// Listen for message end
 		this.pi.on("message_end", (event: MessageEndEvent) => {
