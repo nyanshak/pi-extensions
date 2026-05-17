@@ -109,9 +109,9 @@ interface AvailableCommand {
 
 // Built-in slash commands (from pi core)
 // These are hardcoded since they're not exported from the package
-const BUILTIN_SLASH_COMMANDS: readonly { name: string; description: string }[] = [
+const BUILTIN_SLASH_COMMANDS: readonly { name: string; description: string; hint?: string }[] = [
 	{ name: "settings", description: "Open settings menu" },
-	{ name: "model", description: "Select model (opens selector UI)" },
+	{ name: "model", description: "Select model (opens selector UI)", hint: "model name to switch to" },
 	{ name: "scoped-models", description: "Enable/disable models for Ctrl+P cycling" },
 	{ name: "export", description: "Export session (HTML default, or specify path: .html/.jsonl)" },
 	{ name: "import", description: "Import and resume a session from a JSONL file" },
@@ -121,17 +121,40 @@ const BUILTIN_SLASH_COMMANDS: readonly { name: string; description: string }[] =
 	{ name: "session", description: "Show session info and stats" },
 	{ name: "changelog", description: "Show changelog entries" },
 	{ name: "hotkeys", description: "Show all keyboard shortcuts" },
-	{ name: "fork", description: "Create a new fork from a previous user message" },
+	{ name: "fork", description: "Create a new fork from a previous user message", hint: "entry ID to fork from" },
 	{ name: "clone", description: "Duplicate the current session at the current position" },
 	{ name: "tree", description: "Navigate session tree (switch branches)" },
 	{ name: "login", description: "Configure provider authentication" },
 	{ name: "logout", description: "Remove provider authentication" },
-	{ name: "compact", description: "Compress context to make room (runs silently)" },
-	{ name: "clear", description: "Clear conversation history" },
-	{ name: "undo", description: "Undo the last agent action" },
+	{ name: "compact", description: "Compress context to make room (runs silently)", hint: "optional custom instructions for summarization" },
+	{ name: "clear", description: "Clear conversation history", hint: "clear conversation history" },
+	{ name: "undo", description: "Undo the last agent action", hint: "revert to a previous state" },
 	{ name: "reset", description: "Reset to a clean slate (like starting fresh)" },
-	{ name: "help", description: "Show this help" },
+	{ name: "help", description: "Show this help", hint: "show available commands and usage" },
 ];
+
+// Command hints for registered commands
+const COMMAND_HINTS: Record<string, string> = {
+	web: "optional host, port, and password",
+	compact: "optional custom instructions for summarization",
+	new: "start a new session",
+	fork: "entry ID to fork from",
+	switch: "session file path or name",
+	clear: "clear conversation history",
+	undo: "revert to a previous state",
+	model: "model name to switch to",
+	tools: "enable or disable specific tools",
+	thinking: "thinking level (off, low, high)",
+	help: "show available commands and usage",
+};
+
+/**
+ * Get input hint for a registered command
+ */
+function getCommandHint(name: string): AvailableCommandInput | undefined {
+	const hint = COMMAND_HINTS[name];
+	return hint ? { hint } : undefined;
+}
 
 // Session Update Types (from spec)
 type SessionUpdate =
@@ -701,10 +724,11 @@ class AcpProtocolHandler {
 
 		// Send available commands
 		const registeredCommands = this.pi.getCommands();
-		const allCommands = [
+		const allCommands: AvailableCommand[] = [
 			...registeredCommands.map((cmd) => ({
 				name: cmd.name,
 				description: cmd.description || undefined,
+				input: getCommandHint(cmd.name),
 			})),
 			// Add built-in commands that aren't already registered
 			...BUILTIN_SLASH_COMMANDS.filter(
@@ -712,6 +736,7 @@ class AcpProtocolHandler {
 			).map((builtin) => ({
 				name: builtin.name,
 				description: builtin.description,
+				input: builtin.hint ? { hint: builtin.hint } : undefined,
 			})),
 		];
 		this.sendSessionUpdate(sessionId, {
