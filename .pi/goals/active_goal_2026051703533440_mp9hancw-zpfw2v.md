@@ -5,12 +5,12 @@
   "status": "active",
   "autoContinue": true,
   "usage": {
-    "tokensUsed": 420511,
-    "activeSeconds": 1659
+    "tokensUsed": 596593,
+    "activeSeconds": 2186
   },
   "sisyphus": false,
   "createdAt": "2026-05-17T07:53:34.400Z",
-  "updatedAt": "2026-05-17T08:22:41.807Z",
+  "updatedAt": "2026-05-17T08:31:42.216Z",
   "activePath": ".pi/goals/active_goal_2026051703533440_mp9hancw-zpfw2v.md"
 }
 
@@ -23,5 +23,5 @@ Rewrite ~/src/github.com/capyup/pi-goal to use beads for goal persistence, with 
 - Status: running
 - Auto-continue: on
 - Sisyphus mode: no
-- Time spent: 27m39s
-- Tokens used: 421K (420,511) tokens
+- Time spent: 36m26s
+- Tokens used: 597K (596,593) tokens
