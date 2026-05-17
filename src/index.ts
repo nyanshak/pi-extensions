@@ -349,20 +349,21 @@ class AcpProtocolHandler {
 		this.pi.on("tool_execution_update", (event: ToolExecutionUpdateEvent) => {
 			if (!this.pendingPrompt) return;
 
-			// Send partial results
-			const content: ToolCallContent[] = [];
-			if (event.partialResult) {
-				const text = typeof event.partialResult === "string" 
-					? event.partialResult 
-					: JSON.stringify(event.partialResult);
-				content.push({ type: "content", content: { type: "text", text } });
-			}
+			// Only send tool_call_update if there's actual non-empty content
+			if (!event.partialResult) return;
+
+			const text = typeof event.partialResult === "string" 
+				? event.partialResult 
+				: JSON.stringify(event.partialResult);
+
+			// Skip empty or placeholder content (like {"content":[]})
+			if (!text || text === "{}" || text === "{\"content\":[]}") return;
 
 			this.sendSessionUpdate(this.pendingPrompt.sessionId, {
 				sessionUpdate: "tool_call_update",
 				toolCallId: event.toolCallId,
 				status: "in_progress",
-				content: content.length > 0 ? content : undefined,
+				content: [{ type: "content", content: { type: "text", text } }],
 			});
 		});
 
