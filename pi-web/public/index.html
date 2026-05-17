@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>pi-web</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #1a1a2e;
+      color: #eee;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    header {
+      background: #16213e;
+      padding: 1rem 2rem;
+      border-bottom: 1px solid #0f3460;
+    }
+    h1 {
+      color: #e94560;
+      font-size: 1.5rem;
+    }
+    .status {
+      margin-top: 0.5rem;
+      font-size: 0.9rem;
+      color: #888;
+    }
+    .status.connected { color: #4ecca3; }
+    .status.disconnected { color: #e94560; }
+    main {
+      flex: 1;
+      padding: 2rem;
+      display: flex;
+      flex-direction: column;
+      gap: 2rem;
+    }
+    .section {
+      background: #16213e;
+      border-radius: 8px;
+      padding: 1.5rem;
+    }
+    .section h2 {
+      font-size: 1rem;
+      color: #888;
+      margin-bottom: 1rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .info-grid {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 0.5rem 1rem;
+    }
+    .label {
+      color: #888;
+    }
+    .value {
+      color: #4ecca3;
+      font-family: monospace;
+    }
+    .value a {
+      color: #4ecca3;
+      text-decoration: none;
+    }
+    .value a:hover {
+      text-decoration: underline;
+    }
+    .controls {
+      display: flex;
+      gap: 1rem;
+    }
+    button {
+      background: #0f3460;
+      color: #eee;
+      border: none;
+      padding: 0.75rem 1.5rem;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.9rem;
+      transition: background 0.2s;
+    }
+    button:hover {
+      background: #e94560;
+    }
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .log {
+      background: #0a0a1a;
+      border-radius: 4px;
+      padding: 1rem;
+      height: 200px;
+      overflow-y: auto;
+      font-family: monospace;
+      font-size: 0.85rem;
+    }
+    .log-entry {
+      padding: 0.25rem 0;
+      border-bottom: 1px solid #1a1a2e;
+    }
+    .log-entry.info { color: #4ecca3; }
+    .log-entry.warn { color: #f9a825; }
+    .log-entry.error { color: #e94560; }
+    .log-entry recv { color: #7c4dff; }
+    .log-entry send { color: #00bcd4; }
+    .timestamp {
+      color: #555;
+      margin-right: 0.5rem;
+    }
+    footer {
+      background: #16213e;
+      padding: 1rem 2rem;
+      border-top: 1px solid #0f3460;
+      text-align: center;
+      font-size: 0.8rem;
+      color: #555;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>pi-web</h1>
+    <div class="status disconnected" id="status">Disconnected</div>
+  </header>
+  
+  <main>
+    <div class="section">
+      <h2>Connection</h2>
+      <div class="info-grid">
+        <span class="label">WebSocket URL:</span>
+        <span class="value" id="ws-url">—</span>
+        <span class="label">Status:</span>
+        <span class="value" id="ws-status">Not connected</span>
+      </div>
+      <div class="controls" style="margin-top: 1rem;">
+        <button id="connect-btn">Connect</button>
+        <button id="disconnect-btn" disabled>Disconnect</button>
+      </div>
+    </div>
+    
+    <div class="section">
+      <h2>Session</h2>
+      <div class="info-grid">
+        <span class="label">Session ID:</span>
+        <span class="value" id="session-id">—</span>
+      </div>
+      <div class="controls" style="margin-top: 1rem;">
+        <button id="new-session-btn" disabled>New Session</button>
+        <button id="end-session-btn" disabled>End Session</button>
+      </div>
+    </div>
+    
+    <div class="section">
+      <h2>Event Log</h2>
+      <div class="log" id="log"></div>
+    </div>
+  </main>
+  
+  <footer>
+    pi-web — WebSocket server for pi
+  </footer>
+
+  <script>
+    // Extract WebSocket URL from current page URL
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${protocol}//${window.location.host}`;
+    
+    // State
+    let ws = null;
+    let sessionId = null;
+    let requestId = 0;
+    
+    // DOM elements
+    const statusEl = document.getElementById('status');
+    const wsUrlEl = document.getElementById('ws-url');
+    const wsStatusEl = document.getElementById('ws-status');
+    const sessionIdEl = document.getElementById('session-id');
+    const connectBtn = document.getElementById('connect-btn');
+    const disconnectBtn = document.getElementById('disconnect-btn');
+    const newSessionBtn = document.getElementById('new-session-btn');
+    const endSessionBtn = document.getElementById('end-session-btn');
+    const logEl = document.getElementById('log');
+    
+    // Initialize WebSocket URL display
+    wsUrlEl.innerHTML = `<a href="#" onclick="connect()">${wsUrl}</a>`;
+    
+    // Logging
+    function log(message, type = 'info') {
+      const entry = document.createElement('div');
+      entry.className = `log-entry ${type}`;
+      const time = new Date().toLocaleTimeString();
+      entry.innerHTML = `<span class="timestamp">${time}</span>${message}`;
+      logEl.appendChild(entry);
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+    
+    function updateStatus(connected) {
+      statusEl.textContent = connected ? 'Connected' : 'Disconnected';
+      statusEl.className = `status ${connected ? 'connected' : 'disconnected'}`;
+      wsStatusEl.textContent = connected ? 'Connected' : 'Not connected';
+      connectBtn.disabled = connected;
+      disconnectBtn.disabled = !connected;
+      newSessionBtn.disabled = !connected;
+    }
+    
+    // WebSocket connection
+    function connect() {
+      log(`Connecting to ${wsUrl}...`);
+      ws = new WebSocket(wsUrl);
+      
+      ws.onopen = () => {
+        log('WebSocket connected', 'info');
+        updateStatus(true);
+        
+        // Initialize
+        sendRequest('initialize', {}).then(result => {
+          log(`Initialized: ${result.agentInfo?.name} v${result.agentInfo?.version}`, 'info');
+        }).catch(err => {
+          log(`Init error: ${err.message}`, 'error');
+        });
+      };
+      
+      ws.onclose = (event) => {
+        log(`Disconnected (code: ${event.code})`, 'warn');
+        updateStatus(false);
+        sessionId = null;
+        sessionIdEl.textContent = '—';
+        endSessionBtn.disabled = true;
+      };
+      
+      ws.onerror = (error) => {
+        log('WebSocket error', 'error');
+      };
+      
+      ws.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data);
+          log(`← ${JSON.stringify(msg).slice(0, 100)}...`, 'recv');
+          
+          // Handle notifications
+          if (!msg.id && msg.method) {
+            handleNotification(msg);
+          }
+        } catch (e) {
+          log(`Received non-JSON: ${event.data}`, 'warn');
+        }
+      };
+    }
+    
+    function disconnect() {
+      if (ws) {
+        ws.close();
+        ws = null;
+      }
+    }
+    
+    // Send JSON-RPC request
+    function sendRequest(method, params) {
+      return new Promise((resolve, reject) => {
+        const id = ++requestId;
+        const msg = { jsonrpc: '2.0', id, method, params };
+        
+        log(`→ ${method}`, 'send');
+        
+        ws.send(JSON.stringify(msg));
+        
+        ws.onmessage = function handler(event) {
+          try {
+            const resp = JSON.parse(event.data);
+            if (resp.id === id) {
+              ws.removeEventListener('message', handler);
+              if (resp.error) {
+                reject(new Error(resp.error.message));
+              } else {
+                resolve(resp.result);
+              }
+            }
+          } catch (e) {}
+        };
+      });
+    }
+    
+    // Handle notifications
+    function handleNotification(msg) {
+      switch (msg.method) {
+        case 'session/update':
+          log(`Session update: ${JSON.stringify(msg.params)}`, 'info');
+          break;
+        default:
+          log(`Notification: ${msg.method}`, 'info');
+      }
+    }
+    
+    // Session management
+    async function createSession() {
+      try {
+        const result = await sendRequest('session_new', { model: 'claude-sonnet-4-20250514' });
+        sessionId = result.sessionId;
+        sessionIdEl.textContent = sessionId;
+        endSessionBtn.disabled = false;
+        log(`Session created: ${sessionId}`, 'info');
+      } catch (err) {
+        log(`Failed to create session: ${err.message}`, 'error');
+      }
+    }
+    
+    async function endSession() {
+      if (!sessionId) return;
+      try {
+        await sendRequest('session_end', { sessionId });
+        log(`Session ended: ${sessionId}`, 'info');
+        sessionId = null;
+        sessionIdEl.textContent = '—';
+        endSessionBtn.disabled = true;
+      } catch (err) {
+        log(`Failed to end session: ${err.message}`, 'error');
+      }
+    }
+    
+    // Event listeners
+    connectBtn.addEventListener('click', connect);
+    disconnectBtn.addEventListener('click', disconnect);
+    newSessionBtn.addEventListener('click', createSession);
+    endSessionBtn.addEventListener('click', endSession);
+    
+    // Auto-connect on load
+    connect();
+  </script>
+</body>
+</html>

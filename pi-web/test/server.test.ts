@@ -135,6 +135,51 @@ describe("Server Module", () => {
     });
   });
 
+  describe("static file serving", () => {
+    it("should serve index.html from static dir", async () => {
+      const server = await startServer({ port: 0, staticDir: "test/static" }, (ws) => {});
+      
+      const res = await fetch(`http://127.0.0.1:${server.port}/`);
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toContain("text/html");
+      const body = await res.text();
+      expect(body).toContain("test-static");
+      
+      await server.close();
+    });
+
+    it("should serve CSS files from static dir", async () => {
+      const server = await startServer({ port: 0, staticDir: "test/static" }, (ws) => {});
+      
+      const res = await fetch(`http://127.0.0.1:${server.port}/style.css`);
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toContain("text/css");
+      const body = await res.text();
+      expect(body).toContain("background: black;");
+      
+      await server.close();
+    });
+
+    it("should return 404 for missing files in static dir", async () => {
+      const server = await startServer({ port: 0, staticDir: "test/static" }, (ws) => {});
+      
+      const res = await fetch(`http://127.0.0.1:${server.port}/nonexistent.html`);
+      expect(res.status).toBe(404);
+      
+      await server.close();
+    });
+
+    it("should deny access outside static dir (path traversal)", async () => {
+      const server = await startServer({ port: 0, staticDir: "test/static" }, (ws) => {});
+      
+      // Path traversal attempt
+      const res = await fetch(`http://127.0.0.1:${server.port}/../test.js`);
+      expect(res.status).toBe(404); // Should not leak files
+      
+      await server.close();
+    });
+  });
+
   describe("password auth - WebSocket", () => {
     it("should reject WebSocket without password", async () => {
       const server = await startServer({ port: 0, password: "secret" }, (ws) => {});

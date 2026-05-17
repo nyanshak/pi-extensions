@@ -1,8 +1,11 @@
 // pi-web: WebSocket server extension for pi
 
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
+
 import { startServer, buildWsUrl, buildHttpUrl } from "./server.js";
 import { WebSocketTransport, type JsonRpcMessage } from "./websocket.js";
-import type { ExtensionAPI, ExtensionContext, SlashCommandInfo } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext, SlashCommandInfo } from "@earendil-works/pi-coding-agent";
 
 // ACP error codes
 const ACP_ERROR_PARSE_ERROR = -32700;
@@ -15,6 +18,11 @@ const ACP_ERROR_INTERNAL_ERROR = -32603;
 interface AcpHandlers {
   [key: string]: ((params: unknown, transport: WebSocketTransport, ws?: WebSocket) => Promise<unknown>) | undefined;
 }
+
+// Get the directory containing this script (for static files)
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const staticDir = join(__dirname, "..", "public");
 
 // Active connections and server handle
 let activeTransports: Map<WebSocket, WebSocketTransport> = new Map();
@@ -287,7 +295,7 @@ async function startWebServer(config: {
 }): Promise<{ url: string; close: () => Promise<void> }> {
   const port = config.port || 0;
 
-  const server = await startServer(config, handleConnection);
+  const server = await startServer({ ...config, staticDir }, handleConnection);
 
   const protocol = config.password ? "wss" : "ws";
   let url = `${protocol}://${server.host}:${server.port}`;
@@ -313,12 +321,19 @@ export default function (pi: ExtensionAPI): void {
     description: "Start web server for remote connections",
     source: "extension",
     sourceInfo: { type: "pi-web" },
-    execute: async (ctx: ExtensionContext) => {
-      // Get interactive input from user
-      const host = await ctx.prompt("Host", { default: "127.0.0.1" }) || "127.0.0.1";
-      const portStr = await ctx.prompt("Port (leave empty for random)", { default: "" });
+    handler: async (args: string, ctx: ExtensionCommandContext) => {
+      // Quick input collection without blocking stdin
+      // Use ctx.ui.select for simpler choices when possible
+      
+      // Get host (default to localhost)
+      const host = await ctx.ui.input("Host", { placeholder: "127.0.0.1" }) || "127.0.0.1";
+      
+      // Get port
+      const portStr = await ctx.ui.input("Port", { placeholder: "leave empty for random" });
       const port = portStr ? parseInt(portStr, 10) : 0;
-      const password = await ctx.prompt("Password (optional, leave empty for none)", { default: "" });
+      
+      // Get optional password
+      const password = await ctx.ui.input("Password", { placeholder: "optional" });
 
       try {
         // Start the server
@@ -341,14 +356,15 @@ export default function (pi: ExtensionAPI): void {
         }
         console.log("========================================\n");
 
-        // Register cleanup handler
-        ctx.onUnload(() => {
+        // Register cleanup on shutdown
+        const cleanup = () => {
           if (activeServer) {
             console.log("Stopping web server...");
             activeServer.close();
             activeServer = null;
           }
-        });
+        };
+        pi.on("session_shutdown", cleanup);
       } catch (err) {
         console.error("Failed to start web server:", err);
       }

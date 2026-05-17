@@ -1,9 +1,9 @@
-// HTTP server with WebSocket upgrade support
-
 import http from "node:http";
 import { WebSocketServer, WebSocket } from "ws";
 import { checkAuth } from "./auth.js";
 import type { IncomingMessage } from "node:http";
+import { readFile } from "node:fs/promises";
+import { extname, resolve as pathResolve } from "node:path";
 
 export interface WebSocketHandler {
   (ws: WebSocket, request: IncomingMessage): void;
@@ -13,6 +13,7 @@ export interface ServerConfig {
   host?: string;
   port?: number;
   password?: string;
+  staticDir?: string;
 }
 
 export interface StartServerResult {
@@ -21,9 +22,6 @@ export interface StartServerResult {
   close: () => Promise<void>;
 }
 
-/**
- * Start HTTP server with WebSocket upgrade support
- */
 export async function startServer(
   config: ServerConfig,
   onConnection: WebSocketHandler
@@ -31,9 +29,10 @@ export async function startServer(
   const host = config.host || "127.0.0.1";
   const password = config.password;
   let actualPort = config.port || 0;
+  // Resolve staticDir to absolute path for path traversal checks
+  const staticDir = config.staticDir ? pathResolve(config.staticDir) : undefined;
 
-  return new Promise((resolve, reject) => {
-    // Create HTTP server
+  return new Promise((resolvePromise, rejectPromise) => {
     const server = http.createServer((req, res) => {
       // Handle CORS preflight (we're not enabling CORS, but handle gracefully)
       if (req.method === "OPTIONS") {
@@ -59,17 +58,52 @@ export async function startServer(
         return;
       }
 
-      // Unknown endpoint
+      // Serve static files from configured directory
+      if (staticDir) {
+        const requestedPath = url.pathname === "/" 
+          ? "index.html" 
+          : url.pathname.slice(1); // Remove leading slash
+        
+        const filePath = pathResolve(staticDir, requestedPath);
+        
+        // Security: ensure path is within static directory
+        if (!filePath.startsWith(staticDir + "/") && filePath !== staticDir) {
+          res.writeHead(403, { "Content-Type": "text/plain" });
+          res.end("Forbidden");
+          return;
+        }
+
+        readFile(filePath)
+          .then((content) => {
+            const ext = extname(filePath);
+            const mimeTypes: Record<string, string> = {
+              ".html": "text/html",
+              ".css": "text/css",
+              ".js": "application/javascript",
+              ".mjs": "application/javascript",
+              ".json": "application/json",
+              ".png": "image/png",
+              ".jpg": "image/jpeg",
+              ".svg": "image/svg+xml",
+              ".ico": "image/x-icon",
+            };
+            const contentType = mimeTypes[ext] || "application/octet-stream";
+            res.writeHead(200, { "Content-Type": contentType });
+            res.end(content);
+          })
+          .catch(() => {
+            // File not found, continue to 404
+          });
+        return;
+      }
+
       res.writeHead(404, { "Content-Type": "text/plain" });
       res.end("Not Found");
     });
 
-    // Create WebSocket server attached to HTTP server
     const wss = new WebSocketServer({ server });
 
-    // Handle WebSocket upgrade
     wss.on("upgrade", (request, socket, head) => {
-      // Check auth for WebSocket connections
       if (password && !checkAuth(request, password)) {
         socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
         socket.destroy();
@@ -81,14 +115,13 @@ export async function startServer(
       });
     });
 
-    // Handle new WebSocket connections
     wss.on("connection", (ws: WebSocket, request: IncomingMessage) => {
       onConnection(ws, request);
     });
 
     // Handle errors
     server.on("error", (err) => {
-      reject(err);
+      rejectPromise(err);
     });
 
     // Start listening
@@ -98,7 +131,7 @@ export async function startServer(
         actualPort = addr.port;
       }
 
-      resolve({
+      resolvePromise({
         host,
         port: actualPort,
         close: () =>
@@ -112,9 +145,6 @@ export async function startServer(
   });
 }
 
-/**
- * Build WebSocket URL from server config
- */
 export function buildWsUrl(host: string, port: number, password?: string): string {
   let url = `ws://${host}:${port}`;
   if (password) {
@@ -123,9 +153,6 @@ export function buildWsUrl(host: string, port: number, password?: string): strin
   return url;
 }
 
-/**
- * Build HTTP URL from server config
- */
 export function buildHttpUrl(host: string, port: number): string {
   return `http://${host}:${port}`;
 }
