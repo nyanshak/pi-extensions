@@ -474,6 +474,97 @@ async function runTests() {
 	console.log(t25Result ? `✓ session/list returns sessions array` : `✗ session/list returns sessions array`);
 	if (t25Result) passed++; else failed++;
 
+	// Test 26: session/new sends available_commands_update notification
+	const t26Result = await new Promise<boolean>(async (resolve) => {
+		const testAgent = spawn("pi", ["--acp"], { stdio: ["pipe", "pipe", "pipe"] });
+		const pending = new Map<number | string, (msg: JsonRpcMessage) => void>();
+		let foundCommandUpdate = false;
+		testAgent.stdout?.on("data", (data) => {
+			for (const line of data.toString().split("\n")) {
+				if (!line.trim() || line.includes("```") || line.includes("[pi-acp]")) continue;
+				try {
+					const msg = JSON.parse(line);
+					// Look for available_commands_update notification
+					if (msg.method === "session/update" && msg.params?.update?.sessionUpdate === "available_commands_update") {
+						// Verify it has the expected structure (even if empty array)
+						if (msg.params.update.availableCommands !== undefined) {
+							foundCommandUpdate = true;
+						}
+					}
+					if (msg.id && pending.has(msg.id)) {
+						pending.get(msg.id)?.(msg);
+						pending.delete(msg.id);
+					}
+				} catch {}
+			}
+		});
+		const send = (msg: object): Promise<JsonRpcMessage> => new Promise((r) => {
+			const id = (msg as any).id || Date.now();
+			pending.set(id, r as any);
+			testAgent.stdin?.write(JSON.stringify({...msg, id}) + "\n");
+			setTimeout(() => { if (pending.has(id)) { pending.delete(id); r({ jsonrpc: "2.0", id, error: { code: -32603 } }); } }, 8000);
+		});
+		await send({ jsonrpc: "2.0", id: 0, method: "initialize", params: { protocolVersion: 1 } });
+		await send({ jsonrpc: "2.0", id: 1, method: "session/new", params: { cwd: "/tmp", mcpServers: [] } });
+		await new Promise((r) => setTimeout(r, 1000));
+		testAgent.kill();
+		resolve(foundCommandUpdate);
+	});
+	console.log(t26Result ? `✓ session/new sends available_commands_update notification` : `✗ session/new sends available_commands_update notification`);
+	if (t26Result) passed++; else failed++;
+
+	// Test 27: available_commands_update has valid AvailableCommand structure
+	const t27Result = await new Promise<boolean>(async (resolve) => {
+		const testAgent = spawn("pi", ["--acp"], { stdio: ["pipe", "pipe", "pipe"] });
+		const pending = new Map<number | string, (msg: JsonRpcMessage) => void>();
+		let validStructure = true;
+		testAgent.stdout?.on("data", (data) => {
+			for (const line of data.toString().split("\n")) {
+				if (!line.trim() || line.includes("```") || line.includes("[pi-acp]")) continue;
+				try {
+					const msg = JSON.parse(line);
+					if (msg.method === "session/update" && msg.params?.update?.sessionUpdate === "available_commands_update") {
+						const commands = msg.params.update.availableCommands;
+						// Must be an array
+						if (!Array.isArray(commands)) {
+							validStructure = false;
+						} else {
+							// If there are commands, validate their structure
+							for (const cmd of commands) {
+								if (
+									!cmd.name ||
+									typeof cmd.name !== "string" ||
+									(cmd.description !== undefined && typeof cmd.description !== "string") ||
+									(cmd.input !== undefined && (!cmd.input.hint || typeof cmd.input.hint !== "string"))
+								) {
+									validStructure = false;
+									break;
+								}
+							}
+						}
+					}
+					if (msg.id && pending.has(msg.id)) {
+						pending.get(msg.id)?.(msg);
+						pending.delete(msg.id);
+					}
+				} catch {}
+			}
+		});
+		const send = (msg: object): Promise<JsonRpcMessage> => new Promise((r) => {
+			const id = (msg as any).id || Date.now();
+			pending.set(id, r as any);
+			testAgent.stdin?.write(JSON.stringify({...msg, id}) + "\n");
+			setTimeout(() => { if (pending.has(id)) { pending.delete(id); r({ jsonrpc: "2.0", id, error: { code: -32603 } }); } }, 8000);
+		});
+		await send({ jsonrpc: "2.0", id: 0, method: "initialize", params: { protocolVersion: 1 } });
+		await send({ jsonrpc: "2.0", id: 1, method: "session/new", params: { cwd: "/tmp", mcpServers: [] } });
+		await new Promise((r) => setTimeout(r, 1000));
+		testAgent.kill();
+		resolve(validStructure);
+	});
+	console.log(t27Result ? `✓ available_commands_update has valid AvailableCommand structure` : `✗ available_commands_update has valid AvailableCommand structure`);
+	if (t27Result) passed++; else failed++;
+
 	agent.kill();
 	console.log(`\n=== Results: ${passed} passed, ${failed} failed ===`);
 	if (failed > 0) process.exit(1);

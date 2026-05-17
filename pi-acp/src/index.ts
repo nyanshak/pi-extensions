@@ -96,6 +96,17 @@ interface ResourceLinkContent {
 	annotations?: Record<string, unknown>;
 }
 
+// Slash Command Types (from ACP spec)
+interface AvailableCommandInput {
+	hint: string;
+}
+
+interface AvailableCommand {
+	name: string;
+	description?: string;
+	input?: AvailableCommandInput;
+}
+
 // Session Update Types (from spec)
 type SessionUpdate =
 	| { sessionUpdate: "user_message_chunk"; content: ContentBlock }
@@ -104,7 +115,7 @@ type SessionUpdate =
 	| { sessionUpdate: "plan"; entries: PlanEntry[] }
 	| { sessionUpdate: "tool_call"; toolCallId: string; title: string; kind: ToolKind; status: ToolCallStatus }
 	| { sessionUpdate: "tool_call_update"; toolCallId: string; status?: ToolCallStatus; content?: ToolCallContent[]; error?: string }
-	| { sessionUpdate: "available_commands"; commands: Command[] }
+	| { sessionUpdate: "available_commands_update"; availableCommands: AvailableCommand[] }
 	| { sessionUpdate: "mode_change"; mode: SessionMode };
 
 type PlanEntry = {
@@ -123,11 +134,6 @@ interface ToolCallContent {
 	oldText?: string;
 	newText?: string;
 	terminalId?: string;
-}
-
-interface Command {
-	name: string;
-	description?: string;
 }
 
 type SessionMode = "readOnly" | "auto" | "fullAccess";
@@ -203,8 +209,9 @@ class StdioTransport {
 				}
 
 				handler(msg);
-			} catch (err) {
-				console.error("Failed to parse JSON:", err);
+			} catch {
+				// Silently ignore non-JSON input (e.g., slash commands like /quit from editor clients).
+				// ACP is JSON-RPC 2.0; slash commands should be handled by the client locally.
 			}
 		});
 	}
@@ -668,10 +675,11 @@ class AcpProtocolHandler {
 
 		// Send available commands
 		this.sendSessionUpdate(sessionId, {
-			sessionUpdate: "available_commands",
-			commands: this.pi.getCommands().map((cmd) => ({
+			sessionUpdate: "available_commands_update",
+			availableCommands: this.pi.getCommands().map((cmd) => ({
 				name: cmd.name,
-				description: cmd.description || "",
+				description: cmd.description || undefined,
+				input: cmd.hint ? { hint: cmd.hint } : undefined,
 			})),
 		});
 

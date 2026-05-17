@@ -2,7 +2,7 @@
 
 import { startServer, buildWsUrl, buildHttpUrl } from "./server.js";
 import { WebSocketTransport, type JsonRpcMessage } from "./websocket.js";
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, SlashCommandInfo } from "@earendil-works/pi-coding-agent";
 
 // ACP error codes
 const ACP_ERROR_PARSE_ERROR = -32700;
@@ -13,13 +13,59 @@ const ACP_ERROR_INTERNAL_ERROR = -32603;
 
 // ACP method handlers
 interface AcpHandlers {
-  [key: string]: ((params: unknown, transport: WebSocketTransport) => Promise<unknown>) | undefined;
+  [key: string]: ((params: unknown, transport: WebSocketTransport, ws?: WebSocket) => Promise<unknown>) | undefined;
 }
 
 // Active connections and server handle
 let activeTransports: Map<WebSocket, WebSocketTransport> = new Map();
 let activeServer: { url: string; close: () => Promise<void> } | null = null;
 let webCommandName = "web";
+let piApi: ExtensionAPI | null = null;
+
+// Session state for tracking commands
+interface SessionState {
+  sessionId: string;
+  initialized: boolean;
+  commandsSent: boolean;
+}
+const sessionStates = new Map<WebSocket, SessionState>();
+
+/**
+ * Get available commands formatted for ACP spec
+ */
+function getAvailableCommands(): Array<{ name: string; description?: string; input?: { hint: string } }> {
+  if (!piApi) return [];
+  const commands = piApi.getCommands();
+  return commands.map((cmd: SlashCommandInfo) => ({
+    name: cmd.name,
+    description: cmd.description || undefined,
+    // Note: SlashCommandInfo doesn't have a hint field, but we can add hints for known commands
+    input: getCommandHint(cmd),
+  }));
+}
+
+/**
+ * Get hint for a command if known
+ */
+function getCommandHint(cmd: SlashCommandInfo): { hint: string } | undefined {
+  // Provide helpful hints for known commands
+  const hints: Record<string, string> = {
+    web: "optional host, port, and password",
+    compact: "optional custom instructions for summarization",
+    new: "start a new session",
+    fork: "entry ID to fork from",
+    switch: "session file path or name",
+    clear: "clear conversation history",
+    undo: "revert to a previous state",
+    model: "model name to switch to",
+    tools: "enable or disable specific tools",
+    thinking: "thinking level (off, low, high)",
+    help: "show available commands and usage",
+  };
+  
+  const hint = hints[cmd.name];
+  return hint ? { hint } : undefined;
+}
 
 /**
  * Handle ACP WebSocket connection
@@ -27,14 +73,16 @@ let webCommandName = "web";
 function handleConnection(ws: WebSocket, _req: unknown): void {
   const transport = new WebSocketTransport(ws, {
     onMessage: (message: JsonRpcMessage) => {
-      handleAcpMessage(message, transport);
+      handleAcpMessage(message, transport, ws);
     },
     onClose: (code: number, reason: string) => {
       activeTransports.delete(ws);
+      sessionStates.delete(ws);
     },
   });
 
   activeTransports.set(ws, transport);
+  sessionStates.set(ws, { sessionId: "", initialized: false, commandsSent: false });
 }
 
 /**
@@ -42,7 +90,8 @@ function handleConnection(ws: WebSocket, _req: unknown): void {
  */
 async function handleAcpMessage(
   message: JsonRpcMessage,
-  transport: WebSocketTransport
+  transport: WebSocketTransport,
+  ws: WebSocket
 ): Promise<void> {
   const { method, id, params } = message;
 
@@ -62,7 +111,7 @@ async function handleAcpMessage(
   }
 
   try {
-    const result = await handler(params, transport);
+    const result = await handler(params, transport, ws);
     if (id !== undefined) {
       transport.sendResponse(id, result);
     }
@@ -78,41 +127,104 @@ async function handleAcpMessage(
 
 // ACP method handlers
 const acpHandlers: AcpHandlers = {
-  // Session methods (stub implementations)
-  session_new: async (params, _transport) => {
-    console.log("session_new called with:", params);
+  // Initialize handler - sends available commands on session/new
+  initialize: async (params, transport, ws) => {
+    console.log("initialize called with:", params);
+    // Send available commands update to advertise slash commands
+    if (ws) {
+      const sessionState = sessionStates.get(ws);
+      if (sessionState) {
+        sessionState.initialized = true;
+      }
+      transport.sendNotification("session/update", {
+        sessionId: "init",
+        update: {
+          sessionUpdate: "available_commands_update",
+          availableCommands: getAvailableCommands(),
+        },
+      });
+    }
     return {
-      sessionId: `session-${Date.now()}`,
+      protocolVersion: 1,
+      agentCapabilities: {
+        loadSession: true,
+        sessionCapabilities: {
+          close: {},
+          resume: {},
+        },
+        promptCapabilities: {
+          audio: false,
+          image: true,
+          embeddedContext: true,
+        },
+        mcpCapabilities: {
+          http: false,
+          sse: false,
+        },
+      },
+      agentInfo: {
+        name: "pi-web",
+        version: "1.0.0",
+      },
+      authMethods: [],
+    };
+  },
+
+  // Session methods
+  session_new: async (params, transport, ws) => {
+    console.log("session_new called with:", params);
+    const sessionId = `session-${Date.now()}`;
+    
+    // Update session state
+    if (ws) {
+      const sessionState = sessionStates.get(ws);
+      if (sessionState) {
+        sessionState.sessionId = sessionId;
+        sessionState.commandsSent = true;
+      }
+      
+      // Send available commands update after session creation
+      transport.sendNotification("session/update", {
+        sessionId,
+        update: {
+          sessionUpdate: "available_commands_update",
+          availableCommands: getAvailableCommands(),
+        },
+      });
+    }
+    
+    return {
+      sessionId,
       capability: {},
     };
   },
 
-  session_prompt: async (params, _transport) => {
+  session_prompt: async (params, _transport, _ws) => {
     console.log("session_prompt called with:", params);
-    return { sessionId: params, content: [] };
+    return { sessionId: (params as any)?.sessionId, content: [] };
   },
 
-  session_end: async (params, _transport) => {
+  session_end: async (params, _transport, _ws) => {
     console.log("session_end called with:", params);
     return { success: true };
   },
 
-  "session/list": async (_params, _transport) => {
+  "session/list": async (_params, _transport, _ws) => {
     return { sessions: [], nextCursor: null };
   },
 
-  "session/update_metadata": async (params, _transport) => {
+  "session/update_metadata": async (params, _transport, _ws) => {
     console.log("session/update_metadata called with:", params);
     return { success: true };
   },
 
-  "session/cancel": async (params, _transport) => {
+  "session/cancel": async (params, _transport, _ws) => {
     console.log("session/cancel called with:", params);
     return { success: true };
   },
 
   // Capability reporting
-  capabilities: async () => {
+  capabilities: async (_params, _transport, _ws) => {
     return {
       capabilities: {
         streaming: true,
@@ -151,6 +263,9 @@ async function startWebServer(config: {
  * Register the extension with pi
  */
 export default function (pi: ExtensionAPI): void {
+  // Store pi API reference for command queries
+  piApi = pi;
+  
   // Register /web command
   pi.registerCommand("web", {
     description: "Start web server for remote connections",

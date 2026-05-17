@@ -14,9 +14,6 @@ ACP (Agent Client Protocol) extension for pi - enables Zed IDE integration via A
 - Real-time streaming (agent_message_chunk, tool_call_update, etc.)
 - Zed integration with message formatting
 
-**Tests:** 24 passing  
-**Location:** `pi-acp/src/index.ts`
-
 **Documentation:** [pi-acp/README.md](./pi-acp/README.md)
 
 ### [pi-web](./pi-web/)
@@ -28,9 +25,6 @@ WebSocket server extension for pi - enables remote connections via WebSocket.
 - Optional password authentication (Bearer header or query param)
 - `/web` slash command for interactive server start
 - ACP method handlers
-
-**Tests:** 52 passing  
-**Location:** `pi-web/src/index.ts`
 
 **Documentation:** [pi-web/README.md](./pi-web/README.md) (or [PLAN.md](./pi-web/PLAN.md))
 
