@@ -26,8 +26,9 @@ console.log('\nMarkdown Rendering');
 test('marked.js CDN loaded', () => {
   assert(html.includes('cdn.jsdelivr.net/npm/marked'), 'missing marked CDN');
 });
-test('marked.parse call in renderMarkdown', () => {
-  assert(html.includes('marked.parse(text)'), 'missing marked.parse call');
+test('renderMarkdown calls hljs.highlightElement for syntax highlighting', () => {
+  assert(html.includes('hljs.highlightElement(block)'), 'missing hljs.highlightElement call');
+  assert(html.includes("typeof hljs !== 'undefined'"), 'missing hljs undefined check');
 });
 
 // ── Test: Session persistence ─────────────────────────────────────────────────
@@ -63,8 +64,8 @@ test('updateAutocomplete function exists', () => {
 test('autocomplete dropdown has active class trigger', () => {
   assert(html.includes("autocompleteEl.classList.add('active')"), 'missing autocomplete activation');
 });
-test('autocomplete shows match count header', () => {
-  assert(html.includes('autocomplete-header'), 'missing match count header');
+test('autocomplete header shows escaped filter', () => {
+  assert(html.includes('escapeHtml(filter)}'), 'missing escaped filter in header');
 });
 test('slash-menu triggered by / button with updateSlashMenu', () => {
   assert(html.includes('function updateSlashMenu'), 'missing updateSlashMenu');
