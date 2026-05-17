@@ -244,6 +244,30 @@ class AcpProtocolHandler {
 	private abortController: AbortController | null = null;
 	private pendingPrompt: PendingPrompt | null = null;
 	private messageBuffer: string = "";
+
+	// Helper to extract file locations from tool arguments
+	private extractLocations(input: any): ToolCallLocation[] {
+		const locations: ToolCallLocation[] = [];
+		if (!input) return locations;
+
+		// Common path fields in tool arguments
+		const pathFields = ["path", "file", "filePath", "targetPath", "destination", "paths"];
+		for (const field of pathFields) {
+			const value = input[field];
+			if (value && typeof value === "string") {
+				if (value.startsWith("/") || value.startsWith("./") || value.startsWith("~")) {
+					locations.push({ path: value });
+				}
+			} else if (Array.isArray(value)) {
+				for (const p of value) {
+					if (typeof p === "string" && (p.startsWith("/") || p.startsWith("./") || p.startsWith("~"))) {
+						locations.push({ path: p });
+					}
+				}
+			}
+		}
+		return locations;
+	}
 	
 
 	constructor(pi: ExtensionAPI, transport: StdioTransport) {
@@ -324,13 +348,27 @@ class AcpProtocolHandler {
 			else if (event.toolName === "edit") kind = "edit";
 			else if (event.toolName === "search" || event.toolName === "grep") kind = "search";
 
-			this.sendSessionUpdate(this.pendingPrompt.sessionId, {
+			// Build extended notification with optional ACP fields
+			const notification: any = {
 				sessionUpdate: "tool_call",
 				toolCallId,
 				title,
 				kind,
 				status: "pending",
-			});
+			};
+
+			// Add rawInput with tool arguments
+			if (event.call?.input) {
+				notification.rawInput = event.call.input;
+			}
+
+			// Add locations if we can extract file paths
+			const locations = this.extractLocations(event.call?.input);
+			if (locations.length > 0) {
+				notification.locations = locations;
+			}
+
+			this.sendSessionUpdate(this.pendingPrompt.sessionId, notification);
 		});
 
 		// Listen for tool execution start
@@ -383,6 +421,7 @@ class AcpProtocolHandler {
 				sessionUpdate: "tool_call_update",
 				toolCallId: event.toolCallId,
 				status: event.isError ? "failed" : "completed",
+				rawOutput: event.content ? { content: event.content } : undefined,
 				content: content.length > 0 ? content : undefined,
 				error: event.isError ? "Tool execution failed" : undefined,
 			});
