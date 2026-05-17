@@ -386,6 +386,48 @@ async function runTests() {
 	console.log(t21Result ? `✓ tool_call_update should not send empty content` : `✗ tool_call_update should not send empty content`);
 	if (t21Result) passed++; else failed++;
 
+	// Test 22: no empty agent_message_chunk notifications
+	const t22Result = await new Promise<boolean>(async (resolve) => {
+		const testAgent = spawn("pi", ["--acp"], { stdio: ["pipe", "pipe", "pipe"] });
+		const pending = new Map<number | string, (msg: JsonRpcMessage) => void>();
+		const emptyChunks: string[] = [];
+		testAgent.stdout?.on("data", (data) => {
+			for (const line of data.toString().split("\n")) {
+				if (!line.trim() || line.includes("```") || line.includes("[pi-acp]")) continue;
+				try {
+					const msg = JSON.parse(line);
+					if (msg.method === "session/update" && msg.params?.update?.sessionUpdate === "agent_message_chunk") {
+						const text = msg.params.update.content?.text || "";
+						if (text === "") {
+							emptyChunks.push(text);
+						}
+					}
+					if (msg.id && pending.has(msg.id)) {
+						pending.get(msg.id)?.(msg);
+						pending.delete(msg.id);
+					}
+				} catch {}
+			}
+		});
+		const send = (msg: object): Promise<JsonRpcMessage> => new Promise((r) => {
+			const id = (msg as any).id || Date.now();
+			pending.set(id, r as any);
+			testAgent.stdin?.write(JSON.stringify({...msg, id}) + "\n");
+			setTimeout(() => { if (pending.has(id)) { pending.delete(id); r({ jsonrpc: "2.0", id, error: { code: -32603 } }); } }, 20000);
+		});
+		await send({ jsonrpc: "2.0", id: 0, method: "initialize", params: { protocolVersion: 1 } });
+		const s = await send({ jsonrpc: "2.0", id: 1, method: "session/new", params: { cwd: "/tmp", mcpServers: [] } });
+		await new Promise((r) => setTimeout(r, 300));
+		// Use a prompt that triggers tool call
+		await send({ jsonrpc: "2.0", id: 2, method: "session/prompt", params: { sessionId: (s.result as any)?.sessionId, prompt: [{ type: "text", text: "ls /tmp" }] } });
+		await new Promise((r) => setTimeout(r, 2000));
+		testAgent.kill();
+		// Should have no empty chunks
+		resolve(emptyChunks.length === 0);
+	});
+	console.log(t22Result ? `✓ no empty agent_message_chunk notifications` : `✗ no empty agent_message_chunk notifications`);
+	if (t22Result) passed++; else failed++;
+
 	agent.kill();
 	console.log(`\n=== Results: ${passed} passed, ${failed} failed ===`);
 	if (failed > 0) process.exit(1);

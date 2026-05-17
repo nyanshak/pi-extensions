@@ -705,11 +705,8 @@ class AcpProtocolHandler {
 			}
 		}
 
-		// Send initial agent chunk (empty)
-		this.sendSessionUpdate(session.id, {
-			sessionUpdate: "agent_message_chunk",
-			content: { type: "text", text: "" },
-		});
+		// Send initial agent chunk only when we have actual content
+		// Don't send empty chunk as it adds noise and isn't required by ACP spec
 
 		// Create promise for message end
 		let messageEndResolve: () => void;
