@@ -1,0 +1,37 @@
+{
+  "name": "@nyanshak/pi-webserver",
+  "version": "0.3.0",
+  "description": "Shared HTTP server for pi extensions \u2014 fork of espennilsen/pi-webserver",
+  "type": "module",
+  "keywords": [
+    "pi-package"
+  ],
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nyanshak/pi-webserver.git"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --test"
+  },
+  "author": "Espen Nilsen <hi@e9n.dev>",
+  "license": "MIT",
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "^0.74.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  },
+  "files": [
+    "CHANGELOG.md",
+    "README.md",
+    "dashboard.html",
+    "package.json",
+    "src"
+  ]
+}

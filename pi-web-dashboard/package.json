@@ -1,0 +1,37 @@
+{
+  "name": "@nyanshak/pi-web-dashboard",
+  "version": "0.4.0",
+  "description": "Live agent dashboard for pi with SSE streaming \u2014 fork of espennilsen/pi-web-dashboard",
+  "type": "module",
+  "keywords": [
+    "pi-package"
+  ],
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --test"
+  },
+  "author": "Espen Nilsen <hi@e9n.dev>",
+  "license": "MIT",
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "^0.74.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  },
+  "files": [
+    "CHANGELOG.md",
+    "README.md",
+    "dashboard.html",
+    "package.json",
+    "src"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nyanshak/pi-web-dashboard.git"
+  }
+}
