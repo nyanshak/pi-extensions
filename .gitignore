@@ -1,6 +1,7 @@
-# Dependencies (in subdirs)
+# Dependencies
 pi-acp/node_modules/
 pi-web/node_modules/
+node_modules/
 
 # OS
 .DS_Store
