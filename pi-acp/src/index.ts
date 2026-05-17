@@ -107,6 +107,32 @@ interface AvailableCommand {
 	input?: AvailableCommandInput;
 }
 
+// Built-in slash commands (from pi core)
+// These are hardcoded since they're not exported from the package
+const BUILTIN_SLASH_COMMANDS: readonly { name: string; description: string }[] = [
+	{ name: "settings", description: "Open settings menu" },
+	{ name: "model", description: "Select model (opens selector UI)" },
+	{ name: "scoped-models", description: "Enable/disable models for Ctrl+P cycling" },
+	{ name: "export", description: "Export session (HTML default, or specify path: .html/.jsonl)" },
+	{ name: "import", description: "Import and resume a session from a JSONL file" },
+	{ name: "share", description: "Share session as a secret GitHub gist" },
+	{ name: "copy", description: "Copy last agent message to clipboard" },
+	{ name: "name", description: "Set session display name" },
+	{ name: "session", description: "Show session info and stats" },
+	{ name: "changelog", description: "Show changelog entries" },
+	{ name: "hotkeys", description: "Show all keyboard shortcuts" },
+	{ name: "fork", description: "Create a new fork from a previous user message" },
+	{ name: "clone", description: "Duplicate the current session at the current position" },
+	{ name: "tree", description: "Navigate session tree (switch branches)" },
+	{ name: "login", description: "Configure provider authentication" },
+	{ name: "logout", description: "Remove provider authentication" },
+	{ name: "compact", description: "Compress context to make room (runs silently)" },
+	{ name: "clear", description: "Clear conversation history" },
+	{ name: "undo", description: "Undo the last agent action" },
+	{ name: "reset", description: "Reset to a clean slate (like starting fresh)" },
+	{ name: "help", description: "Show this help" },
+];
+
 // Session Update Types (from spec)
 type SessionUpdate =
 	| { sessionUpdate: "user_message_chunk"; content: ContentBlock }
@@ -674,13 +700,23 @@ class AcpProtocolHandler {
 		this.currentSessionId = sessionId;
 
 		// Send available commands
-		this.sendSessionUpdate(sessionId, {
-			sessionUpdate: "available_commands_update",
-			availableCommands: this.pi.getCommands().map((cmd) => ({
+		const registeredCommands = this.pi.getCommands();
+		const allCommands = [
+			...registeredCommands.map((cmd) => ({
 				name: cmd.name,
 				description: cmd.description || undefined,
-				input: cmd.hint ? { hint: cmd.hint } : undefined,
 			})),
+			// Add built-in commands that aren't already registered
+			...BUILTIN_SLASH_COMMANDS.filter(
+				(builtin) => !registeredCommands.some((cmd) => cmd.name === builtin.name)
+			).map((builtin) => ({
+				name: builtin.name,
+				description: builtin.description,
+			})),
+		];
+		this.sendSessionUpdate(sessionId, {
+			sessionUpdate: "available_commands_update",
+			availableCommands: allCommands,
 		});
 
 		if (id !== undefined) {

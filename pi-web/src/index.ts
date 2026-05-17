@@ -30,24 +30,66 @@ interface SessionState {
 }
 const sessionStates = new Map<WebSocket, SessionState>();
 
+// Built-in slash commands (from pi core)
+// These are hardcoded since they're not exported from the package
+const BUILTIN_SLASH_COMMANDS: readonly { name: string; description: string }[] = [
+	{ name: "settings", description: "Open settings menu" },
+	{ name: "model", description: "Select model (opens selector UI)" },
+	{ name: "scoped-models", description: "Enable/disable models for Ctrl+P cycling" },
+	{ name: "export", description: "Export session (HTML default, or specify path: .html/.jsonl)" },
+	{ name: "import", description: "Import and resume a session from a JSONL file" },
+	{ name: "share", description: "Share session as a secret GitHub gist" },
+	{ name: "copy", description: "Copy last agent message to clipboard" },
+	{ name: "name", description: "Set session display name" },
+	{ name: "session", description: "Show session info and stats" },
+	{ name: "changelog", description: "Show changelog entries" },
+	{ name: "hotkeys", description: "Show all keyboard shortcuts" },
+	{ name: "fork", description: "Create a new fork from a previous user message" },
+	{ name: "clone", description: "Duplicate the current session at the current position" },
+	{ name: "tree", description: "Navigate session tree (switch branches)" },
+	{ name: "login", description: "Configure provider authentication" },
+	{ name: "logout", description: "Remove provider authentication" },
+	{ name: "compact", description: "Compress context to make room (runs silently)" },
+	{ name: "clear", description: "Clear conversation history" },
+	{ name: "undo", description: "Undo the last agent action" },
+	{ name: "reset", description: "Reset to a clean slate (like starting fresh)" },
+	{ name: "help", description: "Show this help" },
+];
+
 /**
  * Get available commands formatted for ACP spec
  */
 function getAvailableCommands(): Array<{ name: string; description?: string; input?: { hint: string } }> {
-  if (!piApi) return [];
-  const commands = piApi.getCommands();
-  return commands.map((cmd: SlashCommandInfo) => ({
-    name: cmd.name,
-    description: cmd.description || undefined,
-    // Note: SlashCommandInfo doesn't have a hint field, but we can add hints for known commands
-    input: getCommandHint(cmd),
-  }));
+	// Get extension-registered commands
+	const registeredCommands = piApi?.getCommands() || [];
+	
+	// Combine with built-in commands, filtering duplicates
+	const registeredNames = new Set(registeredCommands.map((cmd) => cmd.name));
+	const builtinCommands = BUILTIN_SLASH_COMMANDS.filter(
+		(cmd) => !registeredNames.has(cmd.name)
+	);
+	
+	// Combine both lists
+	const allCommands = [
+		...registeredCommands.map((cmd: SlashCommandInfo) => ({
+			name: cmd.name,
+			description: cmd.description || undefined,
+			input: getCommandHint(cmd.name),
+		})),
+		...builtinCommands.map((cmd) => ({
+			name: cmd.name,
+			description: cmd.description,
+			input: getCommandHint(cmd.name),
+		})),
+	];
+	
+	return allCommands;
 }
 
 /**
  * Get hint for a command if known
  */
-function getCommandHint(cmd: SlashCommandInfo): { hint: string } | undefined {
+function getCommandHint(name: string): { hint: string } | undefined {
   // Provide helpful hints for known commands
   const hints: Record<string, string> = {
     web: "optional host, port, and password",
@@ -63,7 +105,7 @@ function getCommandHint(cmd: SlashCommandInfo): { hint: string } | undefined {
     help: "show available commands and usage",
   };
   
-  const hint = hints[cmd.name];
+  const hint = hints[name];
   return hint ? { hint } : undefined;
 }
 
