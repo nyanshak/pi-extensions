@@ -1,5 +1,0 @@
-{"id":"int-3d028132","kind":"field_change","created_at":"2026-05-17T03:14:16.517129393Z","actor":"Brendan Shaklovitz","issue_id":"pi-web-mbg","extra":{"field":"status","new_value":"closed","old_value":"in_progress","reason":"Closed"}}
-{"id":"int-1c967f0d","kind":"field_change","created_at":"2026-05-17T03:14:17.867536301Z","actor":"Brendan Shaklovitz","issue_id":"pi-web-vpb","extra":{"field":"status","new_value":"closed","old_value":"open","reason":"Closed"}}
-{"id":"int-2334d8fd","kind":"field_change","created_at":"2026-05-17T03:14:18.717684947Z","actor":"Brendan Shaklovitz","issue_id":"pi-web-czc","extra":{"field":"status","new_value":"closed","old_value":"open","reason":"Closed"}}
-{"id":"int-814cf55f","kind":"field_change","created_at":"2026-05-17T03:21:09.138771251Z","actor":"Brendan Shaklovitz","issue_id":"pi-web-jrp","extra":{"field":"status","new_value":"closed","old_value":"in_progress","reason":"Closed"}}
-{"id":"int-713773e8","kind":"field_change","created_at":"2026-05-17T03:21:10.491837759Z","actor":"Brendan Shaklovitz","issue_id":"pi-web-kuy","extra":{"field":"status","new_value":"closed","old_value":"open","reason":"Closed"}}
