@@ -1,0 +1,1 @@
+{"type":"goal_created","goalId":"mp9hancw-zpfw2v","objective":"Rewrite ~/src/github.com/capyup/pi-goal to use beads for goal persistence, with all existing commands adapted to use the beads database instead of markdown files in .pi/goals/.","sisyphus":false,"autoContinue":true,"at":"2026-05-17T07:53:34.400Z"}

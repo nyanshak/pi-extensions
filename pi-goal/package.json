@@ -1,0 +1,20 @@
+{
+  "name": "pi-goal",
+  "version": "0.1.0",
+  "description": "Goal mode extension for pi using beads for persistence",
+  "type": "module",
+  "pi": {
+    "extensions": [
+      "./extensions/goal.ts"
+    ]
+  },
+  "dependencies": {
+    "@earendil-works/pi-ai": "^0.74.0",
+    "@earendil-works/pi-coding-agent": "^0.74.0",
+    "@earendil-works/pi-tui": "^0.74.0",
+    "typebox": "^1.0.58"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.3"
+  }
+}
