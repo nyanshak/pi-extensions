@@ -1,0 +1,24 @@
+{
+  "name": "pi-web",
+  "version": "0.1.0",
+  "description": "WebSocket server for pi with ACP protocol support",
+  "type": "module",
+  "scripts": {
+    "test": "tsx test/index.ts",
+    "dev": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.5.10",
+    "@types/node": "^20.11.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.3"
+  },
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  }
+}
