@@ -35,6 +35,7 @@ interface SessionState {
   sessionId: string;
   initialized: boolean;
   commandsSent: boolean;
+  workspace?: string;
 }
 const sessionStates = new Map<WebSocket, SessionState>();
 
@@ -224,13 +225,17 @@ const acpHandlers: AcpHandlers = {
   session_new: async (params, transport, ws) => {
     console.log("session_new called with:", params);
     const sessionId = `session-${Date.now()}`;
+    const workspace = (params as { workspace?: string })?.workspace;
     
     // Update session state
     if (ws) {
-      const sessionState = sessionStates.get(ws);
-      if (sessionState) {
+      let sessionState = sessionStates.get(ws);
+      if (!sessionState) {
+        sessionState = { sessionId, initialized: false, commandsSent: false, workspace };
+        sessionStates.set(ws, sessionState);
+      } else {
         sessionState.sessionId = sessionId;
-        sessionState.commandsSent = true;
+        sessionState.workspace = workspace;
       }
       
       // Send available commands update after session creation
